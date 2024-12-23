@@ -1,4 +1,4 @@
-Designing a realistic and complex simulation like the one you're envisioning involves creating a virtual environment that accurately mimics real-world systems, such as satellites, ground stations, and communication links. The goal is to create an environment where users can engage in tasks like signal interception, communication hijacking, and system manipulation.
+The goal is to create an environment where users can engage in tasks like signal interception, communication hijacking, and system manipulation.
 
 ### **Simulation Design: Satellite and Ground Station Communication Hack**
 
