@@ -3108,6 +3108,160 @@ minikube ip
 echo "Add redhorizon.local to your /etc/hosts pointing to the above IP."
 ```
 
+### HTPPS config
 
+[...previous content remains unchanged...]
 
+### helm/red-horizon/templates/deployment-frontend.yaml
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: {{ .Values.frontend.image }}
+          ports:
+            - containerPort: {{ .Values.frontend.service.port }}
+```
 
+### helm/red-horizon/templates/service-frontend.yaml
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+spec:
+  selector:
+    app: frontend
+  ports:
+    - protocol: TCP
+      port: 3000
+      targetPort: 3000
+  type: ClusterIP
+```
+
+### helm/red-horizon/templates/deployment-database.yaml
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: database-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: database
+  template:
+    metadata:
+      labels:
+        app: database
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.database.image }}
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.database.env.POSTGRES_DB }}
+            - name: POSTGRES_USER
+              value: {{ .Values.database.env.POSTGRES_USER }}
+            - name: POSTGRES_PASSWORD
+              value: {{ .Values.database.env.POSTGRES_PASSWORD }}
+          ports:
+            - containerPort: 5432
+```
+
+### helm/red-horizon/templates/service-database.yaml
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: database-service
+spec:
+  selector:
+    app: database
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP
+```
+
+### helm/red-horizon/templates/ingress.yaml
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: red-horizon-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+spec:
+  tls:
+    - hosts:
+        - redhorizon.local
+      secretName: redhorizon-tls
+  rules:
+    - host: redhorizon.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-service
+                port:
+                  number: 3000
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-service
+                port:
+                  number: 8000
+```
+
+---
+
+### scripts/deploy_minikube.sh
+```bash
+#!/bin/bash
+
+# Start Minikube if not already running
+minikube start --memory=8192 --cpus=4 --driver=docker
+
+# Set Docker env so Helm builds images into Minikube
+eval $(minikube docker-env)
+
+# Build Docker images
+cd ..
+docker build -t red-horizon-backend:latest ./backend
+docker build -t red-horizon-frontend:latest ./frontend/react-app
+
+# Install NGINX Ingress
+minikube addons enable ingress
+
+# Deploy Helm chart
+cd helm/red-horizon
+helm install redhorizon .
+
+# Wait for ingress
+kubectl get ingress
+
+# Get Minikube IP
+minikube ip
+
+echo "Add redhorizon.local to your /etc/hosts pointing to the above IP."
+```
