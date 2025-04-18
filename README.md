@@ -2311,3 +2311,803 @@ volumes:
 - **Firewall:** Configure firewall rules to restrict access to your services as necessary.
 - **Updates:** Regularly update your system and software to patch security vulnerabilities.
 
+# Red Horizon: APT-Centric Autonomous Training Platform
+
+## Root Directory Structure
+```
+/red_horizon_labs
+├── backend
+│   ├── api
+│   │   ├── views
+│   │   │   ├── auth.py
+│   │   │   ├── simulations.py
+│   │   │   ├── apt_generator.py
+│   │   ├── models
+│   │   │   ├── user.py
+│   │   │   ├── simulation.py
+│   │   │   ├── leaderboard.py
+│   │   │   ├── scenario_template.py
+│   │   │   └── apt_profile.py
+│   ├── workers
+│   │   └── celery_worker.py
+│   ├── engine
+│   │   ├── auto_generator.py
+│   │   ├── docker_builder.py
+│   │   └── nvd_crawler.py
+│   └── app.py
+├── frontend
+│   └── react-app
+│       └── src
+│           ├── components
+│           ├── pages
+│           └── App.js
+├── simulator_vms
+│   ├── konti_ransomware_lab
+│   ├── koobface_smartphone_lab
+│   ├── rhysida_lab
+│   ├── kioptrix_lvl1
+│   └── dev_butler_blackperl_blue
+├── huntergpt
+│   ├── gpt_assist.py
+│   └── integration.py
+├── dockerfiles
+│   ├── simulation_base.Dockerfile
+│   └── nginx.Dockerfile
+├── config
+│   ├── settings.yaml
+│   └── secrets.env
+├── database
+│   └── init_db.sql
+├── scripts
+│   ├── init_db.py
+│   └── seed_data.py
+├── README.md
+├── docker-compose.yml
+└── requirements.txt
+```
+
+---
+
+## Production-Level File Implementations
+
+### backend/app.py
+```python
+from flask import Flask
+from api.views.apt_generator import apt_generator
+from api.views.simulations import simulations
+from api.views.auth import auth
+
+app = Flask(__name__)
+app.register_blueprint(apt_generator)
+app.register_blueprint(simulations)
+app.register_blueprint(auth)
+
+if __name__ == '__main__':
+    app.run(debug=False, host='0.0.0.0')
+```
+
+### backend/api/views/apt_generator.py
+```python
+from engine.auto_generator import generate_apt_scenario
+from flask import Blueprint, jsonify, request
+
+apt_generator = Blueprint('apt_generator', __name__)
+
+@apt_generator.route('/generate/apt', methods=['POST'])
+def auto_generate():
+    keyword = request.json.get('keyword', 'APT')
+    new_scenario = generate_apt_scenario(keyword)
+    return jsonify(new_scenario)
+```
+
+### backend/api/views/simulations.py
+```python
+from flask import Blueprint, jsonify
+
+simulations = Blueprint('simulations', __name__)
+
+@simulations.route('/simulations', methods=['GET'])
+def list_scenarios():
+    # Placeholder for actual DB call
+    return jsonify({"status": "available"})
+```
+
+### backend/api/views/auth.py
+```python
+from flask import Blueprint, request, jsonify
+
+auth = Blueprint('auth', __name__)
+
+@auth.route('/login', methods=['POST'])
+def login():
+    return jsonify({"token": "mock-token"})
+```
+
+### backend/api/models/user.py
+```python
+from sqlalchemy import Column, Integer, String, Boolean
+from database import Base
+
+class User(Base):
+    __tablename__ = 'users'
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True)
+    hashed_password = Column(String)
+    is_active = Column(Boolean, default=True)
+```
+
+### backend/api/models/simulation.py
+```python
+from sqlalchemy import Column, Integer, String, Boolean
+from database import Base
+
+class Simulation(Base):
+    __tablename__ = 'simulations'
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String)
+    path = Column(String)
+    description = Column(String)
+    is_premium = Column(Boolean, default=False)
+```
+
+### backend/api/models/leaderboard.py
+```python
+from sqlalchemy import Column, Integer, ForeignKey
+from database import Base
+
+class Leaderboard(Base):
+    __tablename__ = 'leaderboards'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'))
+    simulation_id = Column(Integer, ForeignKey('simulations.id'))
+    score = Column(Integer)
+```
+
+### backend/api/models/scenario_template.py
+```python
+from sqlalchemy import Column, Integer, String, Boolean
+from database import Base
+
+class ScenarioTemplate(Base):
+    __tablename__ = 'scenario_templates'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    cves = Column(String)
+    difficulty = Column(String)
+    is_premium = Column(Boolean)
+```
+
+### backend/api/models/apt_profile.py
+```python
+from sqlalchemy import Column, Integer, String
+from database import Base
+
+class AptProfile(Base):
+    __tablename__ = 'apt_profiles'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    known_cves = Column(String)
+    notes = Column(String)
+```
+
+### backend/engine/auto_generator.py
+```python
+import os
+from .nvd_crawler import fetch_latest_apt
+from .docker_builder import build_lab
+
+SCENARIO_BASE = './simulator_vms/'
+
+def generate_apt_scenario(keyword):
+    apt_report = fetch_latest_apt(keyword)
+    title = apt_report['name']
+    desc = apt_report['description']
+    cves = apt_report['cves']
+
+    build_path = os.path.join(SCENARIO_BASE, title.replace(' ', '_'))
+    build_lab(title, desc, cves, build_path)
+    return {
+        'title': title,
+        'description': desc,
+        'path': build_path,
+        'cves': cves
+    }
+```
+
+### backend/engine/nvd_crawler.py
+```python
+import requests
+
+def fetch_latest_apt(keyword):
+    url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch={keyword}&resultsPerPage=1"
+    res = requests.get(url)
+    data = res.json()
+    first = data['vulnerabilities'][0]['cve']
+    return {
+        'name': first['id'],
+        'description': first['descriptions'][0]['value'],
+        'cves': [first['id']]
+    }
+```
+
+### backend/engine/docker_builder.py
+```python
+import os
+
+def build_lab(title, desc, cves, path):
+    os.makedirs(path, exist_ok=True)
+    dockerfile_path = os.path.join(path, 'Dockerfile')
+    with open(dockerfile_path, 'w') as f:
+        f.write(f"""
+        FROM ubuntu:20.04
+        RUN apt update && apt install -y netcat curl
+        RUN echo '{desc}' > /info.txt
+        LABEL CVE="{','.join(cves)}"
+        CMD [\"/bin/bash\"]
+        """)
+```
+
+### docker-compose.yml
+```yaml
+version: '3.8'
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=production
+  frontend:
+    build: ./frontend/react-app
+    ports:
+      - "3000:3000"
+  database:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_DB: redhorizon
+      POSTGRES_USER: red
+      POSTGRES_PASSWORD: secure
+  redis:
+    image: redis
+```
+
+---
+
+[...existing content above remains unchanged...]
+
+---
+
+### frontend/react-app/src/App.js
+```javascript
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Dashboard from './pages/Dashboard';
+import GenerateAPT from './pages/GenerateAPT';
+
+function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/generate" element={<GenerateAPT />} />
+      </Routes>
+    </Router>
+  );
+}
+
+export default App;
+```
+
+### frontend/react-app/src/pages/Dashboard.js
+```javascript
+import React from 'react';
+
+function Dashboard() {
+  return (
+    <div>
+      <h1>Red Horizon Labs</h1>
+      <a href="/generate">Launch APT Generator</a>
+    </div>
+  );
+}
+
+export default Dashboard;
+```
+
+### frontend/react-app/src/pages/GenerateAPT.js
+```javascript
+import React, { useState } from 'react';
+
+function GenerateAPT() {
+  const [keyword, setKeyword] = useState('APT');
+  const [result, setResult] = useState(null);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const res = await fetch('/generate/apt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keyword }),
+    });
+    const data = await res.json();
+    setResult(data);
+  };
+
+  return (
+    <div>
+      <h2>Generate APT Scenario</h2>
+      <form onSubmit={handleSubmit}>
+        <input
+          type="text"
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+        />
+        <button type="submit">Generate</button>
+      </form>
+      {result && (
+        <div>
+          <h3>{result.title}</h3>
+          <p>{result.description}</p>
+          <p>CVE: {result.cves.join(', ')}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default GenerateAPT;
+```
+
+---
+
+### scripts/init_db.py
+```python
+from database import Base, engine
+from api.models import user, simulation, leaderboard, scenario_template, apt_profile
+
+print("Creating database tables...")
+Base.metadata.create_all(bind=engine)
+print("Done.")
+```
+
+### scripts/seed_data.py
+```python
+from sqlalchemy.orm import Session
+from database import SessionLocal
+from api.models.user import User
+from api.models.simulation import Simulation
+
+print("Seeding database...")
+session = SessionLocal()
+
+user = User(username='admin', hashed_password='adminpass')
+simulation = Simulation(title='Initial Test', path='/simulator_vms/init', description='Seeded simulation', is_premium=False)
+
+session.add(user)
+session.add(simulation)
+session.commit()
+session.close()
+print("Done.")
+```
+
+---
+
+### dockerfiles/simulation_base.Dockerfile
+```dockerfile
+FROM ubuntu:20.04
+RUN apt update && apt install -y netcat curl
+CMD ["/bin/bash"]
+```
+
+### dockerfiles/nginx.Dockerfile
+```dockerfile
+FROM nginx:alpine
+COPY nginx.conf /etc/nginx/nginx.conf
+```
+
+---
+
+[...previous content remains unchanged...]
+
+---
+
+### config/settings.yaml
+```yaml
+server:
+  port: 8000
+  host: 0.0.0.0
+
+frontend:
+  dev_url: http://localhost:3000
+
+apt:
+  scenario_dir: ./simulator_vms/
+```
+
+### config/secrets.env
+```env
+FLASK_APP=app.py
+FLASK_ENV=production
+POSTGRES_DB=redhorizon
+POSTGRES_USER=red
+POSTGRES_PASSWORD=secure
+OPENAI_API_KEY=your-openai-api-key
+```
+
+### dockerfiles/nginx.conf
+```nginx
+worker_processes 1;
+
+events { worker_connections 1024; }
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+
+    sendfile        on;
+    keepalive_timeout  65;
+
+    upstream backend {
+        server backend:8000;
+    }
+
+    server {
+        listen 80;
+
+        location / {
+            proxy_pass http://backend;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_cache_bypass $http_upgrade;
+        }
+    }
+}
+```
+
+### README.md
+```markdown
+# Red Horizon Labs
+
+An autonomous red teaming simulation platform focused on APTs, satellite/network comms, and military-grade training.
+
+## Features
+- Automatic APT Scenario Generator
+- Dockerized VM Lab Environments
+- Real-time CVE Fetching via NVD
+- HunterGPT AI Assistant Integration
+- Freemium/Premium Scenario Access
+- React Frontend + Flask Backend
+- PostgreSQL + Redis + NGINX
+
+## Getting Started
+
+### Prerequisites
+- Docker & Docker Compose
+- Python 3.10+
+
+### Installation
+```bash
+git clone https://github.com/your-user/red_horizon_labs.git
+cd red_horizon_labs
+cp config/secrets.env.example config/secrets.env
+```
+
+### Run Project
+```bash
+docker-compose up --build
+```
+
+Access backend at [http://localhost](http://localhost)
+Access frontend at [http://localhost:3000](http://localhost:3000)
+
+### Seed Database
+```bash
+docker exec -it <backend_container_name> python scripts/init_db.py
+docker exec -it <backend_container_name> python scripts/seed_data.py
+```
+
+## Directory Structure
+- `backend/` – Flask API, generators, celery
+- `frontend/` – React UI components
+- `simulator_vms/` – Local APT labs
+- `dockerfiles/` – Base and NGINX Dockerfiles
+- `config/` – Environment settings
+
+---
+
+[...existing content remains unchanged...]
+
+---
+
+### config/secrets.env.example
+```env
+# Flask Configuration
+FLASK_APP=app.py
+FLASK_ENV=production
+
+# Database Configuration
+POSTGRES_DB=redhorizon
+POSTGRES_USER=red
+POSTGRES_PASSWORD=secure
+
+# OpenAI Integration
+OPENAI_API_KEY=your-openai-api-key
+```
+
+---
+
+### .github/workflows/deploy.yml
+```yaml
+name: Deploy Red Horizon Labs
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: red
+          POSTGRES_PASSWORD: secure
+          POSTGRES_DB: redhorizon
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: |
+          pytest
+
+      - name: Build Docker images
+        run: |
+          docker-compose build
+
+      - name: Deploy containers
+        run: |
+          docker-compose up -d
+```
+
+---
+
+### helm/red-horizon/Chart.yaml
+```yaml
+apiVersion: v2
+name: red-horizon
+version: 0.1.0
+description: APT Simulation Platform Helm Chart
+```
+
+### helm/red-horizon/values.yaml
+```yaml
+backend:
+  image: red-horizon-backend:latest
+  service:
+    port: 8000
+frontend:
+  image: red-horizon-frontend:latest
+  service:
+    port: 3000
+database:
+  image: postgres:13
+  env:
+    POSTGRES_DB: redhorizon
+    POSTGRES_USER: red
+    POSTGRES_PASSWORD: secure
+```
+
+### helm/red-horizon/templates/deployment-backend.yaml
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: {{ .Values.backend.image }}
+          ports:
+            - containerPort: {{ .Values.backend.service.port }}
+```
+
+### helm/red-horizon/templates/service-backend.yaml
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+spec:
+  selector:
+    app: backend
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP
+```
+[...previous content remains unchanged...]
+
+### helm/red-horizon/templates/deployment-frontend.yaml
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: {{ .Values.frontend.image }}
+          ports:
+            - containerPort: {{ .Values.frontend.service.port }}
+```
+
+### helm/red-horizon/templates/service-frontend.yaml
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+spec:
+  selector:
+    app: frontend
+  ports:
+    - protocol: TCP
+      port: 3000
+      targetPort: 3000
+  type: ClusterIP
+```
+
+### helm/red-horizon/templates/deployment-database.yaml
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: database-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: database
+  template:
+    metadata:
+      labels:
+        app: database
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.database.image }}
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.database.env.POSTGRES_DB }}
+            - name: POSTGRES_USER
+              value: {{ .Values.database.env.POSTGRES_USER }}
+            - name: POSTGRES_PASSWORD
+              value: {{ .Values.database.env.POSTGRES_PASSWORD }}
+          ports:
+            - containerPort: 5432
+```
+
+### helm/red-horizon/templates/service-database.yaml
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: database-service
+spec:
+  selector:
+    app: database
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP
+```
+
+### helm/red-horizon/templates/ingress.yaml
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: red-horizon-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+    - host: redhorizon.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-service
+                port:
+                  number: 3000
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-service
+                port:
+                  number: 8000
+```
+
+---
+
+### scripts/deploy_minikube.sh
+```bash
+#!/bin/bash
+
+# Start Minikube if not already running
+minikube start --memory=8192 --cpus=4 --driver=docker
+
+# Set Docker env so Helm builds images into Minikube
+eval $(minikube docker-env)
+
+# Build Docker images
+cd ..
+docker build -t red-horizon-backend:latest ./backend
+docker build -t red-horizon-frontend:latest ./frontend/react-app
+
+# Install NGINX Ingress
+minikube addons enable ingress
+
+# Deploy Helm chart
+cd helm/red-horizon
+helm install redhorizon .
+
+# Wait for ingress
+kubectl get ingress
+
+# Get Minikube IP
+minikube ip
+
+echo "Add redhorizon.local to your /etc/hosts pointing to the above IP."
+```
+
+
+
+
